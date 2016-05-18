@@ -1,10 +1,16 @@
 # DistributedCraft
 Terran Federacy's struggle with Space Bears
 
-Instalacja biblioteki glib:
+### Instalacja
+Biblioteka glib:
 
-sudo apt-get install libglib2.0-dev
+```sh
+$ sudo apt-get install libglib2.0-dev
+```
 
-Kompilacja
+### Kompilacja
+Obecny makefile:
 
-make
+```sh
+$ make
+```

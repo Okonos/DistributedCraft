@@ -2,6 +2,12 @@
 Terran Federacy's struggle with Space Bears
 
 ### Instalacja
+MPI:
+
+```sh
+$ sudo apt-get install mpich2
+```
+
 Biblioteka glib:
 
 ```sh

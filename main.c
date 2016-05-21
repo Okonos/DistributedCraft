@@ -94,6 +94,7 @@ int countDamage()
       totalDmg += ((Ship *) node->data)->dmg;
       node = list_next(node);
    }
+   return totalDmg;
 }
 
 void *mainThread()
@@ -114,7 +115,7 @@ void *mainThread()
          {
             int data[2] = {timestamp, dmgRcvd};
             // TODO: POWINIEN BYĆ NIEBLOKUJĄCY, na razie chyba nie jest
-            MPI_SEND(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
+            MPI_Send(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
          }
 
       printf("%d: Awaiting dock and %d repairs\n", myNumber, dmgRcvd);
@@ -133,6 +134,8 @@ void *mainThread()
       pthread_mutex_unlock(&mutex);
       printf("%d: Battlecruiser operational\n", myNumber);
    }
+   
+   return NULL;
 }
 
 void *communicationThread()
@@ -184,6 +187,8 @@ void *communicationThread()
          }
       }
    }
+
+   return NULL;
 }
 
 void cleanup()

@@ -42,7 +42,8 @@ void agreeToPendingRequests()
    {
       _time++;
       Ship *s = ((Ship *) node->data);
-      MPI_Send(&s->timestamp, 1, MPI_INT, s->number, ACK, MPI_COMM_WORLD);
+      int data[2] = {s->timestamp, s->dmgRcvd};
+      MPI_Send(data, 2, MPI_INT, s->number, ACK, MPI_COMM_WORLD);
 
       // można też kolejno usuwać, ale funkcja i tak jest w muteksie,
       // więc to raczej nie ma większego znaczenia
@@ -59,7 +60,8 @@ void checkPermission(Ship *ship)
    if(!isMyPriorityHigher(ship))
    {
       _time++;
-      MPI_Send(&ship->timestamp, 1, MPI_INT, ship->number, ACK, MPI_COMM_WORLD);
+      int data[2] = {ship->timestamp, ship->dmgRcvd};
+      MPI_Send(data, 2, MPI_INT, ship->number, ACK, MPI_COMM_WORLD);
       higherPriorityShips = list_append(higherPriorityShips, ship);
    }
    else
@@ -76,7 +78,7 @@ bool needQuit()
 {
   switch(pthread_mutex_trylock(&quitMutex))
   {
-    case false: /* if we got the lock, unlock and return true */
+    case false: /* false = 0; if we got the lock, unlock and return true */
       pthread_mutex_unlock(&quitMutex);
       return true;
     case EBUSY: /* return false if the mutex was locked */
@@ -134,7 +136,7 @@ void *mainThread()
       pthread_mutex_unlock(&mutex);
       printf("%d: Battlecruiser operational\n", myNumber);
    }
-   
+
    return NULL;
 }
 
@@ -145,8 +147,10 @@ void *communicationThread()
       MPI_Status status;
       int data[MAX_DATA];
       MPI_Recv(data, MAX_DATA, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+      // zawsze wysyłany timestamp i dmgRcvd
       int senderNumber = status.MPI_SOURCE;
       int senderTimestamp = data[0];
+      int senderDmgRcvd = data[1];
       switch (status.MPI_TAG)
       {
          case REQUEST:
@@ -154,7 +158,7 @@ void *communicationThread()
             Ship *s = malloc(sizeof(Ship));
             s->timestamp = senderTimestamp;
             s->number = senderNumber;
-            s->dmg = data[1];
+            s->dmg = senderDmgRcvd;
             pthread_mutex_lock(&mutex);
             checkPermission(s);
             _time = max(_time, senderTimestamp) + 1;
@@ -165,7 +169,7 @@ void *communicationThread()
          case ACK:
          {
             pthread_mutex_lock(&mutex);
-            // TODO(consider): przesyłanie dmgRcvd
+            // DONE: przesyłanie dmgRcvd
             // (dodajemy do neutrali, później może trafić do higherPriorityShips)
             higherPriorityShips = list_remove(higherPriorityShips, senderNumber);
             if(senderTimestamp != timestamp)
@@ -173,12 +177,10 @@ void *communicationThread()
             if( list_find(neutralShips, senderNumber) == NULL \
             && list_find(lowerPriorityShips, senderNumber) == NULL )
             {
-               // TODO: PLACEHOLDER SHIP WITH RANDOM DMG RECEIVED
-               // TO BE CHANGED
                Ship *s = malloc(sizeof(Ship));
                s->number = senderNumber;
                s->timestamp = senderTimestamp;
-               s->dmg = 0; // TODO TEMP!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+               s->dmg = senderDmgRcvd;
                list_append(neutralShips, s);
             }
             _time = max(_time, senderTimestamp) + 1;
@@ -205,7 +207,7 @@ int main(int argc, char* argv[])
    // printf("%d\n", provided);
    MPI_Comm_rank (MPI_COMM_WORLD, &myNumber);        /* get current process id */
    MPI_Comm_size (MPI_COMM_WORLD, &SHIPS);        /* get number of processes */
-   printf( "Hello world from process %d of %d\n", myNumber, SHIPS );
+   printf( "Battlecruiser number %d of %d reporting\n", myNumber, SHIPS );
 
    pthread_mutex_lock(&quitMutex);
    pthread_t pth, pth2;

@@ -35,7 +35,22 @@ Ship* list_find(GSList *list, int num)
    return NULL;
 }
 
-GSList* list_remove(GSList *list, int num)
+/*
+nie zwalnia pamięci usuwanego z listy elementu(tak wynika z testów)
+ */
+GSList* list_remove_soft(GSList *list, int num)
+{
+   Ship *s = list_find(list, num);
+   if(s != NULL)
+      list = g_slist_remove(list, s);
+
+   return list;
+}
+
+/*
+zwalnia pamięć usuwanego z listy elementu
+ */
+GSList* list_remove_hard(GSList *list, int num)
 {
    Ship *s = list_find(list, num);
    if(s != NULL)
@@ -43,28 +58,9 @@ GSList* list_remove(GSList *list, int num)
       list = g_slist_remove(list, s);
       free(s);
    }
+
    return list;
 }
-
-// GSList* list_remove(GSList *list, int num)
-// {
-//    GSList *node = list;
-//    while( /*((Ship *) list->data)->number != num &&*/ node != NULL )
-//    {
-//       if(((Ship *) node->data)->number == num)
-//       {
-//          Ship *s = ((Ship *) node->data);
-//          list = g_slist_remove(list, s);
-//          free(s);// free?
-//          return list;
-//       }
-//       printf("next\n");
-//       node = g_slist_next(node);
-//    }
-//
-//    printf("no removal\n");
-//    return list;
-// }
 
 GSList* list_free(GSList *list)
 {

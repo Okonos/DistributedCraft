@@ -10,6 +10,8 @@ GSList* list_append(GSList *list, Ship *ship);
 
 Ship* list_find(GSList *list, int num);
 
-GSList* list_remove(GSList *list, int num);
+GSList* list_remove_soft(GSList *list, int num);
+
+GSList* list_remove_hard(GSList *list, int num);
 
 GSList* list_free(GSList *list);

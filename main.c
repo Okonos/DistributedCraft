@@ -23,7 +23,7 @@ List neutralShips = NULL;
 int _time = 0;
 int timestamp;
 
-typedef enum {REQUEST, ACK} msg_type;
+typedef enum {REQUEST, ACK, TERMINATE} msg_type;
 
 pthread_mutex_t quitMutex = PTHREAD_MUTEX_INITIALIZER; // used as quit flag
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -42,13 +42,8 @@ void agreeToPendingRequests()
    {
       _time++;
       Ship *s = ((Ship *) node->data);
-      int data[2] = {s->timestamp, s->dmgRcvd};
+      int data[2] = {s->timestamp, s->dmg};
       MPI_Send(data, 2, MPI_INT, s->number, ACK, MPI_COMM_WORLD);
-
-      // można też kolejno usuwać, ale funkcja i tak jest w muteksie,
-      // więc to raczej nie ma większego znaczenia
-      // lowerPriorityShips = list_remove(lowerPriorityShips, s);
-
       higherPriorityShips = list_append(higherPriorityShips, s);
       node = list_next(node);
    }
@@ -60,14 +55,14 @@ void checkPermission(Ship *ship)
    if(!isMyPriorityHigher(ship))
    {
       _time++;
-      int data[2] = {ship->timestamp, ship->dmgRcvd};
+      int data[2] = {ship->timestamp, ship->dmg};
       MPI_Send(data, 2, MPI_INT, ship->number, ACK, MPI_COMM_WORLD);
       higherPriorityShips = list_append(higherPriorityShips, ship);
    }
    else
    {
+      neutralShips = list_remove_soft(neutralShips, ship->number);
       lowerPriorityShips = list_append(lowerPriorityShips, ship);
-      neutralShips = list_remove(neutralShips, ship->number);
    }
 }
 
@@ -78,7 +73,7 @@ bool needQuit()
 {
   switch(pthread_mutex_trylock(&quitMutex))
   {
-    case false: /* false = 0; if we got the lock, unlock and return true */
+    case 0: /* if we got the lock, unlock and return true */
       pthread_mutex_unlock(&quitMutex);
       return true;
     case EBUSY: /* return false if the mutex was locked */
@@ -106,6 +101,7 @@ void *mainThread()
    {
       fightSpaceBears( (rand() % 10) + 1 );
       int dmgRcvd = (rand() % SCVs) + 1;
+      printf("%d: Received %d dmg\n", myNumber, dmgRcvd);
 
       pthread_mutex_lock(&mutex);
       _time++;
@@ -171,9 +167,10 @@ void *communicationThread()
             pthread_mutex_lock(&mutex);
             // DONE: przesyłanie dmgRcvd
             // (dodajemy do neutrali, później może trafić do higherPriorityShips)
-            higherPriorityShips = list_remove(higherPriorityShips, senderNumber);
+            higherPriorityShips = list_remove_hard(higherPriorityShips, senderNumber);
             if(senderTimestamp != timestamp)
                break; // old, outdated ACK
+
             if( list_find(neutralShips, senderNumber) == NULL \
             && list_find(lowerPriorityShips, senderNumber) == NULL )
             {
@@ -187,6 +184,9 @@ void *communicationThread()
             pthread_mutex_unlock(&mutex);
             break;
          }
+
+         case TERMINATE:
+            return NULL;
       }
    }
 
@@ -195,6 +195,7 @@ void *communicationThread()
 
 void cleanup()
 {
+   printf("Cleaning\n");
    neutralShips = list_free(neutralShips);
    lowerPriorityShips = list_free(lowerPriorityShips);
    higherPriorityShips = list_free(higherPriorityShips);
@@ -205,32 +206,44 @@ int main(int argc, char* argv[])
    int provided;
    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
    // printf("%d\n", provided);
+
+   DOCKS = atoi(argv[1]);
+   SCVs = atoi(argv[2]);
+
    MPI_Comm_rank (MPI_COMM_WORLD, &myNumber);        /* get current process id */
    MPI_Comm_size (MPI_COMM_WORLD, &SHIPS);        /* get number of processes */
    printf( "Battlecruiser number %d of %d reporting\n", myNumber, SHIPS );
 
    pthread_mutex_lock(&quitMutex);
-   pthread_t pth, pth2;
-   pthread_create(&pth, NULL, &mainThread, NULL);
-   pthread_create(&pth2, NULL, &communicationThread, NULL);
+   pthread_t main_pth, comm_pth;
+   pthread_create(&main_pth, NULL, &mainThread, NULL);
+   pthread_create(&comm_pth, NULL, &communicationThread, NULL);
 
-   char ch;
-   printf("Type 'q' to terminate\n");
-   while(true)
+   if(myNumber == 0)
    {
-      ch = getchar();
-      if(ch == 'q')
-         break;
+      char ch;
+      printf("Type 'q' to terminate\n");
+      while(true)
+      {
+         ch = getchar();
+         if(ch == 'q')
+            break;
+      }
+      int i; // terminate broadcast
+      for(i=0; i<SHIPS; i++)
+         if(i != myNumber)
+            MPI_Send(0, 0, MPI_INT, i, TERMINATE, MPI_COMM_WORLD);
+
+      pthread_mutex_unlock(&quitMutex);
+      printf("Terminating program\n");
    }
 
-   pthread_mutex_unlock(&quitMutex);
-
-   // oczekiwanie na zakończenie wątków
-   printf("Terminating...\n");
-   pthread_join(pth, NULL);
-   pthread_join(pth2, NULL);
+   // oczekiwanie na zakończenie wątków, kolejność joinów istotna
+   pthread_join(comm_pth, NULL);
+   pthread_mutex_unlock(&quitMutex); // unlock dla innych niż root
+   pthread_join(main_pth, NULL);
    cleanup();
-   printf("Terminated\n");
+   printf("Thread %d terminated\n", myNumber);
 
    MPI_Finalize();
    return 0;

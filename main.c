@@ -136,7 +136,7 @@ int main(int argc, char* argv[])
    if(myNumber == 0)
    {
       pthread_t pth; // wątek do terminacji programu, zbędny w procesach innych niż root
-      pthread_create(pth, NULL, &terminationListener, NULL);
+      pthread_create(&pth, NULL, &terminationListener, NULL);
    }
 
    srand(time(NULL));
@@ -146,6 +146,7 @@ int main(int argc, char* argv[])
    MPI_Status status;
    int flag = -1;
    int data[MAX_DATA];
+   int dmgRcvd = 0;
 
    while( !needQuit() )
    {
@@ -160,7 +161,7 @@ int main(int argc, char* argv[])
 
       if(fightTime == 0 && !requesting)
       {
-         int dmgRcvd = (rand() % SCVs) + 1;
+         dmgRcvd = (rand() % SCVs) + 1;
          printf("%d: Received %d dmg\n", myNumber, dmgRcvd);
          _time++;
          timestamp = _time;

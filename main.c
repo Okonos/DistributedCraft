@@ -148,6 +148,7 @@ int main(int argc, char* argv[])
    int data[MAX_DATA];
    int dmgRcvd = 0;
 
+   // MAIN LOOP
    while( !needQuit() )
    {
       if(fightTime == 0 && !requesting)
@@ -195,6 +196,7 @@ int main(int argc, char* argv[])
          {
             case REQUEST:
             {
+               printf("%d: Received REQUEST\n", myNumber);
                Ship *s = malloc(sizeof(Ship));
                s->timestamp = senderTimestamp;
                s->number = senderNumber;
@@ -206,6 +208,7 @@ int main(int argc, char* argv[])
 
             case ACK:
             {
+               printf("%d: Received ACK\n", myNumber);
                // DONE: przesyłanie dmgRcvd
                // (dodajemy do neutrali, później może trafić do higherPriorityShips)
                higherPriorityShips = list_remove_hard(higherPriorityShips, senderNumber);
@@ -227,10 +230,7 @@ int main(int argc, char* argv[])
 
             case TERMINATE:
             {
-               // 'terminate' broadcast
-               for(i=0; i<SHIPS; i++)
-                  if(i != myNumber)
-                     MPI_Send(0, 0, MPI_INT, i, TERMINATE, MPI_COMM_WORLD);
+               printf("%d: Received TERMINATE\n", myNumber);
 
                pthread_mutex_unlock(&quitMutex); // alternatywa -- goto
                requesting = false; // coby pominać poniższe
@@ -254,6 +254,14 @@ int main(int argc, char* argv[])
                printf("%d: Battlecruiser operational\n", myNumber);
             }
       }
+   }
+
+   if(myNumber == 0)
+   {
+      // 'terminate' broadcast
+      for(i=0; i<SHIPS; i++)
+         if(i != myNumber)
+            MPI_Send(0, 0, MPI_INT, i, TERMINATE, MPI_COMM_WORLD);
    }
 
    cleanup();

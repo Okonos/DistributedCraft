@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
-#include <unistd.h> // sleep
 #include <errno.h> // EBUSY
 #include <mpi.h>
 #include <pthread.h>
@@ -12,6 +11,7 @@
 // #include "ship.h"
 
 #define MAX_DATA 2
+#define SLEEP_INTERVAL 1000
 
 int myNumber;
 int SHIPS;
@@ -26,7 +26,6 @@ int timestamp;
 typedef enum {REQUEST, ACK, TERMINATE} msg_type;
 
 pthread_mutex_t quitMutex = PTHREAD_MUTEX_INITIALIZER; // used as quit flag
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool isMyPriorityHigher(Ship *s)
 {
@@ -94,105 +93,6 @@ int countDamage()
    return totalDmg;
 }
 
-void *mainThread()
-{
-   srand(time(NULL));
-   while( !needQuit() )
-   {
-      fightSpaceBears( (rand() % 10) + 1 );
-      int dmgRcvd = (rand() % SCVs) + 1;
-      printf("%d: Received %d dmg\n", myNumber, dmgRcvd);
-
-      pthread_mutex_lock(&mutex);
-      _time++;
-      timestamp = _time;
-      pthread_mutex_unlock(&mutex);
-      int i;
-      for(i=0; i<SHIPS; i++)
-         if(i != myNumber)
-         {
-            int data[2] = {timestamp, dmgRcvd};
-            // TODO: POWINIEN BYĆ NIEBLOKUJĄCY, na razie chyba nie jest
-            MPI_Send(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
-         }
-
-      printf("%d: Awaiting dock and %d repairs\n", myNumber, dmgRcvd);
-      while( !needQuit() )
-      {
-         int hpShips = list_length(higherPriorityShips);
-         if( (SHIPS - 1) == list_length(neutralShips) + list_length(lowerPriorityShips) + hpShips )
-            if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
-               break;
-      }
-
-      // CRITICAL SECTION: dock and repair
-      pthread_mutex_lock(&mutex);
-      agreeToPendingRequests();
-      neutralShips = list_free(neutralShips);
-      pthread_mutex_unlock(&mutex);
-      printf("%d: Battlecruiser operational\n", myNumber);
-   }
-
-   return NULL;
-}
-
-void *communicationThread()
-{
-   while( !needQuit() )
-   {
-      MPI_Status status;
-      int data[MAX_DATA];
-      MPI_Recv(data, MAX_DATA, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-      // zawsze wysyłany timestamp i dmgRcvd
-      int senderNumber = status.MPI_SOURCE;
-      int senderTimestamp = data[0];
-      int senderDmgRcvd = data[1];
-      switch (status.MPI_TAG)
-      {
-         case REQUEST:
-         {
-            Ship *s = malloc(sizeof(Ship));
-            s->timestamp = senderTimestamp;
-            s->number = senderNumber;
-            s->dmg = senderDmgRcvd;
-            pthread_mutex_lock(&mutex);
-            checkPermission(s);
-            _time = max(_time, senderTimestamp) + 1;
-            pthread_mutex_unlock(&mutex);
-            break;
-         }
-
-         case ACK:
-         {
-            pthread_mutex_lock(&mutex);
-            // DONE: przesyłanie dmgRcvd
-            // (dodajemy do neutrali, później może trafić do higherPriorityShips)
-            higherPriorityShips = list_remove_hard(higherPriorityShips, senderNumber);
-            if(senderTimestamp != timestamp)
-               break; // old, outdated ACK
-
-            if( list_find(neutralShips, senderNumber) == NULL \
-            && list_find(lowerPriorityShips, senderNumber) == NULL )
-            {
-               Ship *s = malloc(sizeof(Ship));
-               s->number = senderNumber;
-               s->timestamp = senderTimestamp;
-               s->dmg = senderDmgRcvd;
-               list_append(neutralShips, s);
-            }
-            _time = max(_time, senderTimestamp) + 1;
-            pthread_mutex_unlock(&mutex);
-            break;
-         }
-
-         case TERMINATE:
-            return NULL;
-      }
-   }
-
-   return NULL;
-}
-
 void cleanup()
 {
    printf("Cleaning\n");
@@ -201,12 +101,30 @@ void cleanup()
    higherPriorityShips = list_free(higherPriorityShips);
 }
 
+void *terminationListener()
+{
+   char ch;
+   printf("Type 'q' to terminate\n");
+   while(true)
+   {
+      ch = getchar();
+      if(ch == 'q')
+      {
+         pthread_mutex_unlock(&quitMutex);
+         printf("Terminating program\n");
+         return NULL;
+      }
+   }
+}
+
 int main(int argc, char* argv[])
 {
+   int i;
    int provided;
    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
    // printf("%d\n", provided);
 
+   // TODO: broadcast do innych?(chyba nie trzeba)
    DOCKS = atoi(argv[1]);
    SCVs = atoi(argv[2]);
 
@@ -215,33 +133,128 @@ int main(int argc, char* argv[])
    printf( "Battlecruiser number %d of %d reporting\n", myNumber, SHIPS );
 
    pthread_mutex_lock(&quitMutex);
-   pthread_t main_pth, comm_pth;
-   pthread_create(&main_pth, NULL, &mainThread, NULL);
-   pthread_create(&comm_pth, NULL, &communicationThread, NULL);
-
    if(myNumber == 0)
    {
-      char ch;
-      printf("Type 'q' to terminate\n");
-      while(true)
-      {
-         ch = getchar();
-         if(ch == 'q')
-            break;
-      }
-      int i; // terminate broadcast
-      for(i=0; i<SHIPS; i++)
-         if(i != myNumber)
-            MPI_Send(0, 0, MPI_INT, i, TERMINATE, MPI_COMM_WORLD);
-
-      pthread_mutex_unlock(&quitMutex);
-      printf("Terminating program\n");
+      pthread_t pth; // wątek do terminacji programu, zbędny w procesach innych niż root
+      pthread_create(pth, NULL, &terminationListener, NULL);
    }
 
-   // oczekiwanie na zakończenie wątków, kolejność joinów istotna
-   pthread_join(comm_pth, NULL);
-   pthread_mutex_unlock(&quitMutex); // unlock dla innych niż root
-   pthread_join(main_pth, NULL);
+   srand(time(NULL));
+   bool requesting = false;
+   int fightTime = 0;
+   MPI_Request request = MPI_REQUEST_NULL;
+   MPI_Status status;
+   int flag = -1;
+   int data[MAX_DATA];
+
+   while( !needQuit() )
+   {
+      if(fightTime == 0 && !requesting)
+         fightTime = ((rand() % 10) + 1) * 1000000; // microseconds
+
+      if(fightTime > 0)
+      {
+         fightSpaceBears(SLEEP_INTERVAL);
+         fightTime -= SLEEP_INTERVAL;
+      }
+
+      if(fightTime == 0 && !requesting)
+      {
+         int dmgRcvd = (rand() % SCVs) + 1;
+         printf("%d: Received %d dmg\n", myNumber, dmgRcvd);
+         _time++;
+         timestamp = _time;
+         for(i=0; i<SHIPS; i++)
+            if(i != myNumber)
+            {
+               int data[2] = {timestamp, dmgRcvd};
+               // TODO: POWINIEN BYĆ CHYBA NIEBLOKUJĄCY
+               MPI_Send(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
+            }
+
+         printf("%d: Awaiting dock and %d repairs\n", myNumber, dmgRcvd);
+         requesting = true;
+      }
+
+
+      // RECEIVE
+      if(flag != 0)
+      {
+         MPI_Irecv(data, MAX_DATA, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+         flag = 0;
+      }
+      MPI_Test(&request, &flag, &status);
+      if(flag != 0)
+      {
+         // zawsze wysyłany timestamp i dmgRcvd
+         int senderNumber = status.MPI_SOURCE;
+         int senderTimestamp = data[0];
+         int senderDmgRcvd = data[1];
+         switch (status.MPI_TAG)
+         {
+            case REQUEST:
+            {
+               Ship *s = malloc(sizeof(Ship));
+               s->timestamp = senderTimestamp;
+               s->number = senderNumber;
+               s->dmg = senderDmgRcvd;
+               checkPermission(s);
+               _time = max(_time, senderTimestamp) + 1;
+               break;
+            }
+
+            case ACK:
+            {
+               // DONE: przesyłanie dmgRcvd
+               // (dodajemy do neutrali, później może trafić do higherPriorityShips)
+               higherPriorityShips = list_remove_hard(higherPriorityShips, senderNumber);
+               if(senderTimestamp != timestamp)
+                  break; // old, outdated ACK
+
+               if( list_find(neutralShips, senderNumber) == NULL \
+               && list_find(lowerPriorityShips, senderNumber) == NULL )
+               {
+                  Ship *s = malloc(sizeof(Ship));
+                  s->number = senderNumber;
+                  s->timestamp = senderTimestamp;
+                  s->dmg = senderDmgRcvd;
+                  list_append(neutralShips, s);
+               }
+               _time = max(_time, senderTimestamp) + 1;
+               break;
+            }
+
+            case TERMINATE:
+            {
+               // 'terminate' broadcast
+               for(i=0; i<SHIPS; i++)
+                  if(i != myNumber)
+                     MPI_Send(0, 0, MPI_INT, i, TERMINATE, MPI_COMM_WORLD);
+
+               pthread_mutex_unlock(&quitMutex); // alternatywa -- goto
+               requesting = false; // coby pominać poniższe
+               break;
+            }
+         }
+      }
+
+
+      // CRITICAL SECTION ENTRY
+      if(requesting)
+      {
+         int hpShips = list_length(higherPriorityShips);
+         if( (SHIPS - 1) == list_length(neutralShips) + list_length(lowerPriorityShips) + hpShips )
+            if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
+            {
+               // CRITICAL SECTION: dock and repair
+               agreeToPendingRequests();
+               neutralShips = list_free(neutralShips);
+               requesting = false; // gdzieś tutaj na końcu
+               printf("%d: Battlecruiser operational\n", myNumber);
+            }
+      }
+   }
+
    cleanup();
    printf("Thread %d terminated\n", myNumber);
 

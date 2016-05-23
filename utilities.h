@@ -1,4 +1,4 @@
 
 int max(int a, int b);
 
-void fightSpaceBears(int seconds);
+void fightSpaceBears(useconds_t microseconds);

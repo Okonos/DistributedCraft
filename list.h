@@ -1,17 +1,22 @@
 #include "ship.h"
 
-typedef GSList* List;
 
-int list_length(GSList *list);
+int list_length(Ship* head);
 
-GSList* list_next(GSList *list);
+Ship* list_next(Ship* ship);
 
-GSList* list_append(GSList *list, Ship *ship);
+void list_add(Ship** head, Ship* ship);
 
-Ship* list_find(GSList *list, int num);
+Ship* list_find(Ship* head, int num);
 
-GSList* list_remove_soft(GSList *list, int num);
+Ship* list_findship(Ship* head, Ship* ship);
 
-GSList* list_remove_hard(GSList *list, int num);
+int list_remove(Ship** head, int num);
 
-GSList* list_free(GSList *list);
+int list_removeship(Ship** head, Ship* ship);
+
+void list_free(Ship** head);
+
+void list_cut_paste(Ship** head1, Ship** head2);
+
+Ship* make_ship(int num, int time, int dmg);

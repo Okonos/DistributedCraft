@@ -1,126 +1,130 @@
-#include <glib.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "list.h"
 
 // #include <stdio.h> // USUNAC
 
-int list_length(GSList *list)
-{
-   return g_slist_length(list);
+void print_ship(Ship* ship){
+   printf("Ship data: id:%d timestamp:%d dmg:%d\n",ship->num,ship->timestamp,ship->dmg);
 }
 
-GSList* list_next(GSList *list)
-{
-   return g_slist_next(list);
+void print_list(Ship* head){
+   while(head!=NULL){
+      print_ship(head);
+      head=head->next;
+   }
 }
 
-GSList* list_append(GSList *list, Ship *ship)
-{
-   return g_slist_append(list, ship);
+Ship* make_ship(int num, int time, int dmg){
+   Ship* ship = (Ship*) malloc(sizeof(Ship));
+   ship->num=num;
+   ship->timestamp=time;
+   ship->dmg=dmg;
+   ship->next=NULL;
+   return ship;
 }
 
-Ship* list_find(GSList *list, int num)
+
+int list_length(Ship* head)
 {
-   GSList *node = list;
-   while(node != NULL)
+   int len = 0;
+   while (head!=NULL){
+      head=head->next;
+   }
+   return len;
+}
+
+Ship* list_next(Ship* ship)
+{
+   return ship->next;
+}
+
+void list_add(Ship** head, Ship* ship)
+{
+
+   ship -> next= *head;
+   *head=ship;
+   //TODO: remove the rest when everything will be working in our magnificent project
+   if (list_find((*head)->next,(*head)->num)!=NULL) printf("The added ship is already on list, we're all doomed!\n");
+}
+
+Ship* list_find(Ship* head, int num)
+{
+   while(head != NULL)
    {
-      if( ((Ship *) node->data)->number == num )
+      if(head->num == num )
       {
-         Ship *s = ((Ship *) node->data);
-         return s;
+         return head;
       }
-      node = g_slist_next(node);
+      head = head->next;
    }
 
    return NULL;
 }
 
-/*
-nie zwalnia pamięci usuwanego z listy elementu(tak wynika z testów)
- */
-GSList* list_remove_soft(GSList *list, int num)
+Ship* list_findship(Ship* head, Ship* ship)
 {
-   Ship *s = list_find(list, num);
-   if(s != NULL)
-      list = g_slist_remove(list, s);
-
-   return list;
+   return list_find(head, ship->num);
 }
 
-/*
-zwalnia pamięć usuwanego z listy elementu
- */
-GSList* list_remove_hard(GSList *list, int num)
+
+int list_remove(Ship** head, int num)
 {
-   Ship *s = list_find(list, num);
-   if(s != NULL)
-   {
-      list = g_slist_remove(list, s);
-      free(s);
+   if (*head==NULL) return 0;
+   Ship* current = *head;
+   if (current->num == num){
+      *head = (*head)->next;
+      free(current);
    }
-
-   return list;
+   while (current->next != NULL ){
+      if (current->next->num != num){
+         current=current->next;
+      }
+      else{
+         Ship* temp = current->next;
+         current->next=current->next->next;
+         free(temp);
+         return 1;
+      }
+   }
+   //nothing was removed
+   return 0;
 }
 
-GSList* list_free(GSList *list)
+int list_removeship(Ship** head, Ship* ship){
+   return list_remove(head,ship->num);
+}
+
+
+void list_free(Ship** head)
 {
-   // g_list_foreach(list, );
-   // g_slist_free(list);
-   g_slist_free_full(list, g_free);
-   list = NULL;
-   return list;
+   while (*head!=NULL){
+      Ship* temp = *head;
+      *head = (*head)->next;
+      free(temp);
+   }
 }
 
-// int main()
-// {
-//    GSList *list = NULL;
-//    Ship *s = malloc(sizeof(Ship));
-//    s->number = 1;
-//    s->timestamp = 10;
-//    s->dmg = 3;
-//    // Ship s;
-//    // s.number = 1;
-//    // s.timestamp = 10;
-//    // s.dmg = 3;
-//    list = list_append(list, s);
-//
-//    printf("dmg:%d\n", ((Ship *) list->data)->dmg);
-//
-//    s = malloc(sizeof(Ship));
-//    s->number = 2;
-//    s->timestamp = 11;
-//    s->dmg = 5;
-//    list = list_append(list, s);
-//
-//    // Ship *s2 = malloc(sizeof(Ship));
-//    // s2->number = 2;
-//    // s2->timestamp = 11;
-//    // s2->dmg = 5;
-//    // list = list_append(list, s2);
-//
-//    printf("dmg:%d\nlen:%d\n", ((Ship *) list->data)->dmg, list_length(list));
-//
-//    list = list_remove(list, 1);
-//    printf("dmg:%d\nlen:%d\n", ((Ship *) list->data)->dmg, list_length(list));
-//    // printf("dmg:%d\n", ((Ship *) list->data)->dmg);
-//
-//    list = list_free(list);
-//    // list = list_clear(list);
-//    if(list == NULL)
-//       printf("List is null\n");
-//    // free(s);
-//    // free(s2);
-//    // printf("%d\n", s->dmg);
-//
-//    printf("len:%d\n", list_length(list));
-//    // printf("dmg:%d\n", ((Ship *) list->data)->dmg);
-//
-//    // s = malloc(sizeof(Ship));
-//    // s->number = 2;
-//    // s->timestamp = 11;
-//    // s->dmg = 5;
-//    // list = list_append(list, s);
-//    // printf("%d\n", list_length(list));
-//
-//    return 0;
-// }
+void list_cut_paste(Ship** head1, Ship** head2){
+   while (*head1!=NULL){
+      list_add(head2, *head1);
+      *head1=(*head1)->next;
+   }
+   list_free(head1);
+}
+
+/*
+int main(){
+   Ship* head = NULL;
+   list_remove(&head,20);
+   list_add(&head,make_ship(1,1,1));
+   list_add(&head,make_ship(2,2,2));
+   list_add(&head,make_ship(3,3,3));
+   list_remove(&head,20);
+   list_add(&head,make_ship(1,1,1));
+   list_free(&head);
+   list_add(&head,make_ship(1,1,1));
+   print_list(head);
+   return 0;
+}*/
+

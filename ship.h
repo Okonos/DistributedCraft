@@ -1,11 +1,12 @@
 #ifndef SHIP_STRUCT
 #define SHIP_STRUCT
 
-typedef struct
+typedef struct Ship
 {
-   int number;
+   int num;
    int timestamp;
    int dmg;
-} Ship;
+   struct Ship* next;
+}Ship;
 
 #endif

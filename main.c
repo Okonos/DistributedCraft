@@ -36,21 +36,22 @@ bool isMyPriorityHigher(Ship *s)
 
 void agreeToPendingRequests()
 {
-   Ship* node = lowerPriorityShips;
-   while(node != NULL)
+   Ship* s = lowerPriorityShips;
+   while(s != NULL)
    {
       _time++;
-      Ship *s = node;
       int data[2] = {s->timestamp, s->dmg};
       MPI_Send(data, 2, MPI_INT, s->num, ACK, MPI_COMM_WORLD);
-      list_add(&higherPriorityShips, s);
-      node = list_next(node);
+      s = s->next;
    }
-   list_free(&lowerPriorityShips);
+   list_cut_paste(&lowerPriorityShips, &higherPriorityShips);
 }
 
 void checkPermission(Ship *ship)
 {
+   list_remove(&higherPriorityShips,ship->num);
+   list_remove(&neutralShips, ship->num);
+   list_remove(&lowerPriorityShips, ship->num);
    if(!isMyPriorityHigher(ship))
    {
       _time++;
@@ -60,7 +61,6 @@ void checkPermission(Ship *ship)
    }
    else
    {
-      list_remove(&neutralShips, ship->num);
       list_add(&lowerPriorityShips, ship);
    }
 }
@@ -96,7 +96,6 @@ int countDamage()
 void cleanup()
 {
    printf("%d Cleaning\n", myNumber);
-   fflush(0);
    list_free(&neutralShips);
    list_free(&lowerPriorityShips);
    list_free(&higherPriorityShips);
@@ -106,7 +105,6 @@ void *terminationListener()
 {
    char ch;
    printf("Type 'q' to terminate\n");
-   fflush(0);
    while(true)
    {
       ch = getchar();
@@ -114,7 +112,6 @@ void *terminationListener()
       {
          pthread_mutex_unlock(&quitMutex);
          printf("Terminating program\n");
-         fflush(0);
          return NULL;
       }
    }
@@ -134,7 +131,6 @@ int main(int argc, char* argv[])
    MPI_Comm_rank (MPI_COMM_WORLD, &myNumber);        /* get current process id */
    MPI_Comm_size (MPI_COMM_WORLD, &SHIPS);        /* get number of processes */
    printf( "Battlecruiser number %d of %d reporting\n", myNumber, SHIPS );
-   fflush(0);
 
    pthread_mutex_lock(&quitMutex);
    if(myNumber == 0)
@@ -168,7 +164,6 @@ int main(int argc, char* argv[])
       {
          dmgRcvd = (rand() % SCVs) + 1;
          printf("%d %d: Received %d dmg\n", _time, myNumber, dmgRcvd);
-         fflush(0);
          _time++;
          timestamp = _time;
          for(i=0; i<SHIPS; i++)
@@ -180,7 +175,6 @@ int main(int argc, char* argv[])
             }
 
          printf("%d %d: Awaiting dock and %d repairs\n", _time, myNumber, dmgRcvd);
-         fflush(0);
          requesting = true;
       }
 
@@ -203,7 +197,6 @@ int main(int argc, char* argv[])
             case REQUEST:
             {
                printf("%d %d: Received REQUEST\n", _time, myNumber);
-               fflush(0);
                checkPermission(make_ship(senderNumber,senderTimestamp,senderDmgRcvd));
                _time = max(_time, senderTimestamp) + 1;
                break;
@@ -212,15 +205,14 @@ int main(int argc, char* argv[])
             case ACK:
             {
                printf("%d %d: Received ACK\n", _time, myNumber);
-               fflush(0);
                // DONE: przesyłanie dmgRcvd
                // (dodajemy do neutrali, później może trafić do higherPriorityShips)
                list_remove(&higherPriorityShips, senderNumber);
+               list_remove(&neutralShips, senderNumber);
                if(senderTimestamp != timestamp)
                   break; // old, outdated ACK
 
-               if( list_find(neutralShips, senderNumber) == NULL \
-               && list_find(lowerPriorityShips, senderNumber) == NULL )
+               if(list_find(lowerPriorityShips, senderNumber) == NULL)
                {
                   list_add(&neutralShips, make_ship(senderNumber,senderTimestamp,senderDmgRcvd));
                }
@@ -231,7 +223,6 @@ int main(int argc, char* argv[])
             case TERMINATE:
             {
                printf("%d %d: Received TERMINATE\n", _time, myNumber);
-               fflush(0);
 
                pthread_mutex_unlock(&quitMutex); // alternatywa -- goto
                requesting = false; // coby pominać poniższe
@@ -246,18 +237,21 @@ int main(int argc, char* argv[])
       {
          int hpShips = list_length(higherPriorityShips);
          if( (SHIPS - 1) == list_length(neutralShips) + list_length(lowerPriorityShips) + hpShips )
+         {
             if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
+
             {
+               printf("%d %d:CRITS Docking and getting repairs\n", _time, myNumber);
                // CRITICAL SECTION: dock and repair
-               agreeToPendingRequests();
                list_free(&neutralShips);
+               agreeToPendingRequests();
                requesting = false; // gdzieś tutaj na końcu
                printf("%d %d: Battlecruiser operational\n", _time, myNumber);
-               fflush(0);
             }
+         }
       }
 
-      // fflush(0);
+      fflush(stdout);
    }
 
    if(myNumber == 0)
@@ -270,7 +264,6 @@ int main(int argc, char* argv[])
 
    cleanup();
    printf("Thread %d terminated\n", myNumber);
-   fflush(0);
 
    MPI_Finalize();
    return 0;

@@ -13,7 +13,7 @@ Ship* list_findship(Ship* head, Ship* ship);
 
 int list_remove(Ship** head, int num);
 
-int list_removeship(Ship** head, Ship* ship);
+int list_remove_ship(Ship** head, Ship* ship);
 
 void list_free(Ship** head);
 

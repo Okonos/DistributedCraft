@@ -15,6 +15,15 @@ void print_list(Ship* head){
    }
 }
 
+Ship* copy_ship(Ship* oldship){
+   Ship* ship = (Ship*) malloc(sizeof(Ship));
+   ship->num=oldship->num;
+   ship->timestamp=oldship->timestamp;
+   ship->dmg=oldship->dmg;
+   ship->next=NULL;
+   return ship;
+}
+
 Ship* make_ship(int num, int time, int dmg){
    Ship* ship = (Ship*) malloc(sizeof(Ship));
    ship->num=num;
@@ -30,6 +39,7 @@ int list_length(Ship* head)
    int len = 0;
    while (head!=NULL){
       head=head->next;
+      len+=1;
    }
    return len;
 }
@@ -91,7 +101,7 @@ int list_remove(Ship** head, int num)
    return 0;
 }
 
-int list_removeship(Ship** head, Ship* ship){
+int list_remove_ship(Ship** head, Ship* ship){
    return list_remove(head,ship->num);
 }
 
@@ -107,7 +117,7 @@ void list_free(Ship** head)
 
 void list_cut_paste(Ship** head1, Ship** head2){
    while (*head1!=NULL){
-      list_add(head2, *head1);
+      list_add(head2, copy_ship(*head1));
       *head1=(*head1)->next;
    }
    list_free(head1);
@@ -120,11 +130,14 @@ int main(){
    list_add(&head,make_ship(1,1,1));
    list_add(&head,make_ship(2,2,2));
    list_add(&head,make_ship(3,3,3));
+   print_list(head);
+   printf("Length %d\n", list_length(head));
    list_remove(&head,20);
    list_add(&head,make_ship(1,1,1));
    list_free(&head);
    list_add(&head,make_ship(1,1,1));
    print_list(head);
+   printf("Length %d\n", list_length(head));
    return 0;
 }*/
 

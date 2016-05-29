@@ -8,7 +8,7 @@ MPI:
 $ sudo apt-get install mpich2
 ```
 
-Biblioteka glib:
+Biblioteka glib:(niepotrzebna)
 
 ```sh
 $ sudo apt-get install libglib2.0-dev

@@ -130,7 +130,7 @@ int main(int argc, char* argv[])
 
    MPI_Comm_rank (MPI_COMM_WORLD, &myNumber);        /* get current process id */
    MPI_Comm_size (MPI_COMM_WORLD, &SHIPS);        /* get number of processes */
-   printf( "Battlecruiser number %d of %d reporting\n", myNumber, SHIPS );
+   printf("%d.%d Battlecruiser number %d of %d reporting\n", _time, myNumber, myNumber, SHIPS );
 
    pthread_mutex_lock(&quitMutex);
    if(myNumber == 0)
@@ -141,7 +141,8 @@ int main(int argc, char* argv[])
 
    srand(time(NULL));
    bool requesting = false;
-   int fightTime = 0;
+   bool repairing = false;
+   int busyTime = 0;
    MPI_Request request = MPI_REQUEST_NULL;
    MPI_Status status;
    int flag = -1;
@@ -151,19 +152,21 @@ int main(int argc, char* argv[])
    // MAIN LOOP
    while( !needQuit() )
    {
-      if(fightTime == 0 && !requesting)
-         fightTime = ((rand() % 10) + 1) * 1000000; // microseconds
+      //Losowanie czasu walki
+      if(busyTime == 0 && !requesting)
+         busyTime = ((rand() % 10) + 1) * 1000000; // microseconds
 
-      if(fightTime > 0)
+      //Odczekiwanie interwału
+      if(busyTime > 0)
       {
-         fightSpaceBears(SLEEP_INTERVAL);
-         fightTime -= SLEEP_INTERVAL;
+         fightSpaceBears(SLEEP_INTERVAL);//in terran fightSpaceBears has the same meaning as getRepairs
+         busyTime -= SLEEP_INTERVAL;
       }
 
-      if(fightTime == 0 && !requesting)
+      if(busyTime == 0 && !requesting)
       {
          dmgRcvd = (rand() % SCVs) + 1;
-         printf("%d %d: Received %d dmg\n", _time, myNumber, dmgRcvd);
+         printf("%d.%d: Received %d dmg\n", _time, myNumber, dmgRcvd);
          _time++;
          timestamp = _time;
          for(i=0; i<SHIPS; i++)
@@ -174,7 +177,7 @@ int main(int argc, char* argv[])
                MPI_Send(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
             }
 
-         printf("%d %d: Awaiting dock and %d repairs\n", _time, myNumber, dmgRcvd);
+         printf("%d.%d: Awaiting dock and %d repairs\n", _time, myNumber, dmgRcvd);
          requesting = true;
       }
 
@@ -196,7 +199,7 @@ int main(int argc, char* argv[])
          {
             case REQUEST:
             {
-               printf("%d %d: Received REQUEST\n", _time, myNumber);
+               //printf("%d.%d: Received REQUEST\n", _time, myNumber);
                checkPermission(make_ship(senderNumber,senderTimestamp,senderDmgRcvd));
                _time = max(_time, senderTimestamp) + 1;
                break;
@@ -204,7 +207,7 @@ int main(int argc, char* argv[])
 
             case ACK:
             {
-               printf("%d %d: Received ACK\n", _time, myNumber);
+               //printf("%d.%d: Received ACK\n", _time, myNumber);
                // DONE: przesyłanie dmgRcvd
                // (dodajemy do neutrali, później może trafić do higherPriorityShips)
                list_remove(&higherPriorityShips, senderNumber);
@@ -222,7 +225,7 @@ int main(int argc, char* argv[])
 
             case TERMINATE:
             {
-               printf("%d %d: Received TERMINATE\n", _time, myNumber);
+               printf("%d.%d: Received TERMINATE\n", _time, myNumber);
 
                pthread_mutex_unlock(&quitMutex); // alternatywa -- goto
                requesting = false; // coby pominać poniższe
@@ -233,7 +236,7 @@ int main(int argc, char* argv[])
 
 
       // CRITICAL SECTION ENTRY
-      if(requesting)
+      if(requesting && !repairing)
       {
          int hpShips = list_length(higherPriorityShips);
          if( (SHIPS - 1) == list_length(neutralShips) + list_length(lowerPriorityShips) + hpShips )
@@ -241,15 +244,29 @@ int main(int argc, char* argv[])
             if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
 
             {
-               printf("%d %d:CRITS Docking and getting repairs\n", _time, myNumber);
-               // CRITICAL SECTION: dock and repair
-               list_free(&neutralShips);
-               agreeToPendingRequests();
-               requesting = false; // gdzieś tutaj na końcu
-               printf("%d %d: Battlecruiser operational\n", _time, myNumber);
+               printf("%d.%d: CRITS Docking and getting repairs\n", _time, myNumber);
+               //printf("%d.%d: State neutral:\n", _time, myNumber);
+               //print_list(neutralShips, _time, myNumber);
+               //printf("%d.%d: State lower:\n", _time, myNumber);
+               //print_list(lowerPriorityShips, _time, myNumber);
+               //printf("%d.%d: State higher:\n", _time, myNumber);
+               //print_list(higherPriorityShips,_time, myNumber);
+               // CRITICAL SECTION BEGINS: dock and repair
+               repairing = true;
+               busyTime = 2000000; //Dwie sekundy
             }
          }
       }
+
+      if (repairing && busyTime == 0){
+         //CRITICAL SECTION ENDS
+         list_free(&neutralShips);
+         agreeToPendingRequests();
+         requesting = false; // gdzieś tutaj na końcu
+         repairing = false;
+         printf("%d.%d: CRIEND Battlecruiser operational\n", _time, myNumber);
+      }
+
 
       fflush(stdout);
    }

@@ -10,7 +10,7 @@
 #include "utilities.h"
 // #include "ship.h"
 
-#define MAX_DATA 2
+#define MAX_DATA 3
 #define SLEEP_INTERVAL 1000
 
 int myNumber;
@@ -36,12 +36,12 @@ bool isMyPriorityHigher(Ship *s)
 
 void agreeToPendingRequests()
 {
+   _time++;
    Ship* s = lowerPriorityShips;
    while(s != NULL)
    {
-      _time++;
-      int data[2] = {s->timestamp, s->dmg};
-      MPI_Send(data, 2, MPI_INT, s->num, ACK, MPI_COMM_WORLD);
+      int data[3] = {s->timestamp, s->dmg, _time};
+      MPI_Send(data, 3, MPI_INT, s->num, ACK, MPI_COMM_WORLD);
       s = s->next;
    }
    list_cut_paste(&lowerPriorityShips, &higherPriorityShips);
@@ -55,8 +55,8 @@ void checkPermission(Ship *ship)
    if(!isMyPriorityHigher(ship))
    {
       _time++;
-      int data[2] = {ship->timestamp, ship->dmg};
-      MPI_Send(data, 2, MPI_INT, ship->num, ACK, MPI_COMM_WORLD);
+      int data[3] = {ship->timestamp, ship->dmg, _time};
+      MPI_Send(data, 3, MPI_INT, ship->num, ACK, MPI_COMM_WORLD);
       list_add(&higherPriorityShips, ship);
    }
    else
@@ -95,7 +95,7 @@ int countDamage()
 
 void cleanup()
 {
-   printf("%d Cleaning\n", myNumber);
+   printf("Thread %d cleaning\n", myNumber);
    list_free(&neutralShips);
    list_free(&lowerPriorityShips);
    list_free(&higherPriorityShips);
@@ -191,7 +191,6 @@ int main(int argc, char* argv[])
       MPI_Test(&request, &flag, &status);
       if(flag != 0)
       {
-         // zawsze wysyłany timestamp i dmgRcvd
          int senderNumber = status.MPI_SOURCE;
          int senderTimestamp = data[0];
          int senderDmgRcvd = data[1];
@@ -208,8 +207,7 @@ int main(int argc, char* argv[])
             case ACK:
             {
                //printf("%d %d: Received ACK\n", _time, myNumber);
-               // DONE: przesyłanie dmgRcvd
-               // (dodajemy do neutrali, później może trafić do higherPriorityShips)
+               int senderTime = data[2];
                list_remove(&higherPriorityShips, senderNumber);
                list_remove(&neutralShips, senderNumber);
                if(senderTimestamp != timestamp)
@@ -217,9 +215,9 @@ int main(int argc, char* argv[])
 
                if(list_find(lowerPriorityShips, senderNumber) == NULL)
                {
-                  list_add(&neutralShips, make_ship(senderNumber,senderTimestamp,senderDmgRcvd));
+                  list_add(&neutralShips, make_ship(senderNumber, senderTimestamp, senderDmgRcvd)); // senderTimestamp czy senderTime? Przypuszczalnie to bez znaczenia
                }
-               _time = max(_time, senderTimestamp) + 1;
+               _time = max(_time, senderTime) + 1;
                break;
             }
 
@@ -243,13 +241,7 @@ int main(int argc, char* argv[])
          {
             if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
             {
-               printf("%d %d: CRITS Docking and getting repairs\n", _time, myNumber);
-               //printf("%d %d: State neutral:\n", _time, myNumber);
-               //print_list(neutralShips, _time, myNumber);
-               //printf("%d %d: State lower:\n", _time, myNumber);
-               //print_list(lowerPriorityShips, _time, myNumber);
-               //printf("%d %d: State higher:\n", _time, myNumber);
-               //print_list(higherPriorityShips,_time, myNumber);
+               printf("%d %d: CRITS Docking and getting %d repairs\n", _time, myNumber, dmgRcvd);
                // CRITICAL SECTION BEGINS: dock and repair
                repairing = true;
                busyTime = 2000000; //Dwie sekundy
@@ -257,13 +249,14 @@ int main(int argc, char* argv[])
          }
       }
 
-      if (repairing && busyTime == 0){
+      if (repairing && busyTime == 0)
+      {
          //CRITICAL SECTION ENDS
+         printf("%d %d: CRIEND Battlecruiser operational\n", _time, myNumber);
          list_free(&neutralShips);
          agreeToPendingRequests();
          requesting = false; // gdzieś tutaj na końcu
          repairing = false;
-         printf("%d %d: CRIEND Battlecruiser operational\n", _time, myNumber);
       }
 
       fflush(stdout);

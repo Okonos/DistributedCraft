@@ -11,7 +11,8 @@
 // #include "ship.h"
 
 #define MAX_DATA 3
-#define SLEEP_INTERVAL 1000
+#define SLEEP_INTERVAL 500
+#define TIME_DILATATION 5  //Sometimes in space time flows TIME_DILATATION times faster...
 
 int myNumber;
 int SHIPS;
@@ -21,7 +22,9 @@ Ship* lowerPriorityShips = NULL;
 Ship* higherPriorityShips = NULL;
 Ship* neutralShips = NULL;
 int _time = 0;
-int timestamp;
+int timestamp=0;
+bool requesting = false;
+bool repairing = false;
 
 typedef enum {REQUEST, ACK, TERMINATE} msg_type;
 
@@ -29,8 +32,10 @@ pthread_mutex_t quitMutex = PTHREAD_MUTEX_INITIALIZER; // used as quit flag
 
 bool isMyPriorityHigher(Ship *s)
 {
-   if(timestamp == s->timestamp)
+   if(!requesting) return false;
+   if(timestamp == s->timestamp){
       return myNumber < s->num;
+   }
    return timestamp < s->timestamp;
 }
 
@@ -139,9 +144,7 @@ int main(int argc, char* argv[])
       pthread_create(&pth, NULL, &terminationListener, NULL);
    }
 
-   srand(time(NULL));
-   bool requesting = false;
-   bool repairing = false;
+   srand(time(NULL)/(myNumber+1));
    int busyTime = 0;
    MPI_Request request = MPI_REQUEST_NULL;
    MPI_Status status;
@@ -154,7 +157,7 @@ int main(int argc, char* argv[])
    {
       //Losowanie czasu walki
       if(busyTime == 0 && !requesting)
-         busyTime = ((rand() % 10) + 1) * 1000000; // microseconds
+         busyTime = ((rand() % 10) + 1) * 1000000 / TIME_DILATATION; // microseconds
 
       //Odczekiwanie interwału
       if(busyTime > 0)
@@ -166,7 +169,7 @@ int main(int argc, char* argv[])
       if(busyTime == 0 && !requesting)
       {
          dmgRcvd = (rand() % SCVs) + 1;
-         printf("%d %d: Received %d dmg\n", _time, myNumber, dmgRcvd);
+         //printf("%d %d: Received %d dmg\n", _time, myNumber, dmgRcvd);
          _time++;
          timestamp = _time;
          for(i=0; i<SHIPS; i++)
@@ -212,7 +215,6 @@ int main(int argc, char* argv[])
                list_remove(&neutralShips, senderNumber);
                if(senderTimestamp != timestamp)
                   break; // old, outdated ACK
-
                if(list_find(lowerPriorityShips, senderNumber) == NULL)
                {
                   list_add(&neutralShips, make_ship(senderNumber, senderTimestamp, senderDmgRcvd)); // senderTimestamp czy senderTime? Przypuszczalnie to bez znaczenia
@@ -241,10 +243,13 @@ int main(int argc, char* argv[])
          {
             if( hpShips <= (DOCKS - 1) && countDamage() <= (SCVs - dmgRcvd) )
             {
-               printf("%d %d: CRITS Docking and getting %d repairs\n", _time, myNumber, dmgRcvd);
+               printf("%d %d: CRITS Priority: %d Docking and getting %d repairs\n", _time, myNumber, timestamp, dmgRcvd);
+               //print_list(neutralShips,_time,myNumber,'n');
+               //print_list(lowerPriorityShips,_time,myNumber,'l');
+               //print_list(higherPriorityShips,_time,myNumber,'h');
                // CRITICAL SECTION BEGINS: dock and repair
                repairing = true;
-               busyTime = 2000000; //Dwie sekundy
+               busyTime = 4000000/TIME_DILATATION; //Dwie sekundy
             }
          }
       }
@@ -252,7 +257,7 @@ int main(int argc, char* argv[])
       if (repairing && busyTime == 0)
       {
          //CRITICAL SECTION ENDS
-         printf("%d %d: CRIEND Battlecruiser operational\n", _time, myNumber);
+         printf("%d %d: CRITXEND Battlecruiser operational\n", _time, myNumber);
          list_free(&neutralShips);
          agreeToPendingRequests();
          requesting = false; // gdzieś tutaj na końcu

@@ -4,13 +4,13 @@
 
 // #include <stdio.h> // USUNAC
 
-void print_ship(Ship* ship, int time, int number){
-   printf("%d.%d: Ship data: id:%d timestamp:%d dmg:%d\n", time, number, ship->num,ship->timestamp,ship->dmg);
+void print_ship(Ship* ship, int time, int number, char tag){
+   printf("%d.%d %c: Ship data: id:%d timestamp:%d dmg:%d\n", time, number, tag, ship->num,ship->timestamp,ship->dmg);
 }
 
-void print_list(Ship* head, int time, int number){
+void print_list(Ship* head, int time, int number, char tag){
    while(head!=NULL){
-      print_ship(head, time, number);
+      print_ship(head, time, number, tag);
       head=head->next;
    }
 }

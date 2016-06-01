@@ -1,6 +1,6 @@
 #include "ship.h"
 
-void print_list(Ship* head, int time, int number);
+void print_list(Ship* head, int time, int number, char tag);
 
 int list_length(Ship* head);
 

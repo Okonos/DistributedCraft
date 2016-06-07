@@ -176,7 +176,6 @@ int main(int argc, char* argv[])
             if(i != myNumber)
             {
                int data[2] = {timestamp, dmgRcvd};
-               // TODO: POWINIEN BYĆ CHYBA NIEBLOKUJĄCY
                MPI_Send(data, 2, MPI_INT, i, REQUEST, MPI_COMM_WORLD);
             }
 
